@@ -1,8 +1,11 @@
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Playfair+Display:ital,wght@0,500;0,600;1,500&display=swap');
+
 .historial-layout {
   min-height: 100vh;
   display: flex;
   background: #f8f2f1;
   color: #3d1f2b;
+  font-family: "DM Sans", sans-serif;
 }
 
 .historial-sidebar {
@@ -92,8 +95,15 @@
 
 .historial-header h1 {
   margin: 7px 0;
-  font-size: 34px;
+  font-family: "Playfair Display", serif;
+  font-size: 45px;
+  font-weight: 500;
   color: #4b1728;
+}
+
+.historial-header h1 em {
+  color: #8c3f57;
+  font-weight: 500;
 }
 
 .historial-header p {
@@ -163,6 +173,23 @@
   border-radius: 8px;
   font-weight: 600;
   font-size: 12px;
+}
+
+.btn-ver-analisis {
+  border: 1px solid #dfc8cf;
+  border-radius: 8px;
+  padding: 7px 10px;
+  background: #fff8fa;
+  color: #6b213a;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.btn-ver-analisis:hover {
+  background: #f4d9df;
 }
 
 .historial-vacio {

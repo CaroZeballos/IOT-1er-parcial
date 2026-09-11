@@ -1,6 +1,7 @@
 import "./Inicio.css";
+import MenuCuenta from "../componentes/MenuCuenta.jsx";
 
-function Inicio({ usuario, irA }) {
+function Inicio({ usuario, irA, cerrarSesion }) {
   return (
     <div className="inicio-container">
 
@@ -48,31 +49,8 @@ function Inicio({ usuario, irA }) {
           </button>
         </div>
 
-        <div className="sidebar-section">
-          <span className="sidebar-title">GESTIÓN</span>
-
-          <button className="sidebar-item">
-            <span>♙</span>
-            Usuarios
-          </button>
-
-          <button className="sidebar-item">
-            <span>⚙</span>
-            Ajustes
-          </button>
-        </div>
-
         <div className="sidebar-bottom">
-          <div className="user-mini">
-            <div className="user-avatar">
-              {usuario?.nombre?.charAt(0)?.toUpperCase() || "A"}
-            </div>
-
-            <div>
-              <strong>{usuario?.nombre || "Usuario"}</strong>
-              <small>Mi cuenta</small>
-            </div>
-          </div>
+          <MenuCuenta usuario={usuario} cerrarSesion={cerrarSesion} />
         </div>
 
       </aside>
@@ -88,17 +66,7 @@ function Inicio({ usuario, irA }) {
             SERIESLAB <span>/</span> INICIO
           </div>
 
-          <div className="header-user">
-            <span>♡</span>
-
-            <div className="header-avatar">
-              {usuario?.nombre?.charAt(0)?.toUpperCase() || "A"}
-            </div>
-
-            <strong>
-              {usuario?.nombre || "Ana"}
-            </strong>
-          </div>
+          <MenuCuenta usuario={usuario} cerrarSesion={cerrarSesion} variante="inicio" />
 
         </header>
 

@@ -1,0 +1,103 @@
+.menu-cuenta {
+  position: relative;
+}
+
+.account-trigger {
+  border: 0;
+  font: inherit;
+  cursor: pointer;
+}
+
+.account-trigger.user-mini {
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  color: inherit;
+  padding: 0;
+  border-radius: 0;
+}
+
+.account-trigger.user-mini:hover {
+  background: transparent;
+}
+
+.account-trigger.header-user,
+.account-trigger.dashboard-usuario {
+  color: inherit;
+}
+
+.account-trigger.dashboard-usuario {
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
+  text-align: left;
+}
+
+.account-trigger.dashboard-usuario > div:last-child {
+  display: flex;
+  flex-direction: column;
+}
+
+.cuenta-avatar {
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: #f4d9df;
+  color: #5a1d31;
+  font-weight: 700;
+}
+
+.cuenta-desplegable {
+  position: absolute;
+  z-index: 50;
+  min-width: 230px;
+  padding: 16px;
+  border: 1px solid #ead8dd;
+  border-radius: 13px;
+  background: white;
+  color: #4b1728;
+  box-shadow: 0 14px 35px rgba(75, 23, 40, 0.2);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.menu-cuenta-sidebar .cuenta-desplegable {
+  left: 4px;
+  bottom: calc(100% + 10px);
+}
+
+.menu-cuenta-inicio .cuenta-desplegable,
+.menu-cuenta-dashboard .cuenta-desplegable {
+  right: 0;
+  top: calc(100% + 10px);
+}
+
+.cuenta-desplegable > span {
+  color: #aa7888;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 1.4px;
+}
+
+.cuenta-desplegable > strong { font-size: 15px; }
+.cuenta-desplegable > small { color: #927780; font-size: 11px; }
+
+.cuenta-desplegable button {
+  margin-top: 12px;
+  padding: 10px 12px;
+  border: 0;
+  border-radius: 8px;
+  background: #6b213a;
+  color: white;
+  display: flex;
+  justify-content: space-between;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.cuenta-desplegable button:hover { background: #7d304b; }

@@ -6,8 +6,16 @@ import Historial from "../paginas/Historial.jsx";
 import Dashboard from "../paginas/Dashboard.jsx";
 
 function App() {
-  const [pagina, setPagina] = useState("login");
-  const [usuario, setUsuario] = useState(null);
+  const usuarioGuardado = (() => {
+    try {
+      return JSON.parse(localStorage.getItem("serieslab_usuario"));
+    } catch {
+      return null;
+    }
+  })();
+  const [pagina, setPagina] = useState(usuarioGuardado ? "inicio" : "login");
+  const [usuario, setUsuario] = useState(usuarioGuardado);
+  const [calculoSeleccionadoId, setCalculoSeleccionadoId] = useState("");
 
   const [nombre, setNombre] = useState("");
   const [email, setEmail] = useState("");
@@ -24,7 +32,7 @@ function App() {
 
     try {
       const respuesta = await fetch(
-        "http://localhost:3030/api/usuarios",
+        "/api/usuarios",
         {
           method: "POST",
           headers: {
@@ -66,7 +74,7 @@ function App() {
 
     try {
       const respuesta = await fetch(
-        "http://localhost:3030/api/usuarios/login",
+        "/api/usuarios/login",
         {
           method: "POST",
           headers: {
@@ -88,6 +96,7 @@ function App() {
 
       alert(`Bienvenida ${datos.usuario.nombre}`);
       setUsuario(datos.usuario);
+      localStorage.setItem("serieslab_usuario", JSON.stringify(datos.usuario));
       setPagina("inicio");
 
       console.log("Usuario:", datos.usuario);
@@ -99,8 +108,23 @@ function App() {
   };
 
   const irA = (paginaDestino) => {
-  setPagina(paginaDestino);
-};
+    if (paginaDestino === "dashboard") setCalculoSeleccionadoId("");
+    setPagina(paginaDestino);
+  };
+
+  const analizarCalculo = (calculoId) => {
+    setCalculoSeleccionadoId(calculoId);
+    setPagina("dashboard");
+  };
+
+  const cerrarSesion = () => {
+    localStorage.removeItem("serieslab_usuario");
+    setUsuario(null);
+    setCalculoSeleccionadoId("");
+    setEmail("");
+    setPassword("");
+    setPagina("login");
+  };
 
   return (
     <div>
@@ -109,19 +133,21 @@ function App() {
   <Inicio
     usuario={usuario}
     irA={irA}
+    cerrarSesion={cerrarSesion}
   />
 )}
 {pagina === "calcular" && (
   <Calcular
   usuario={usuario}
   irA={irA}
+  cerrarSesion={cerrarSesion}
 />
 )}
 {pagina === "historial" && (
-  <Historial usuario={usuario} irA={irA} />
+  <Historial usuario={usuario} irA={irA} analizarCalculo={analizarCalculo} cerrarSesion={cerrarSesion} />
 )}
 {pagina === "dashboard" && (
-  <Dashboard usuario={usuario} irA={irA} />
+  <Dashboard usuario={usuario} irA={irA} calculoInicialId={calculoSeleccionadoId} cerrarSesion={cerrarSesion} />
 )}
 
       {pagina === "login" && (

@@ -1,62 +1,58 @@
-function calcularSeno(x, n) {
+function generarProgresion(tipo, x, n) {
+  const cantidad = Math.max(0, Number(n) || 0);
+  const puntos = [];
+  let termino;
   let suma = 0;
 
-  for (let i = 0; i < n; i++) {
-    const exponente = 2 * i + 1;
-    const signo = i % 2 === 0 ? 1 : -1;
-
-    let factorial = 1;
-
-    for (let j = 1; j <= exponente; j++) {
-      factorial *= j;
-    }
-
-    suma += signo * Math.pow(x, exponente) / factorial;
+  if (tipo === "SER001") {
+    termino = x;
+  } else if (tipo === "SER002" || tipo === "SER003") {
+    termino = 1;
+  } else {
+    return puntos;
   }
 
-  return suma;
+  for (let i = 0; i < cantidad; i++) {
+    if (i > 0) {
+      if (tipo === "SER001") {
+        termino *= (-x * x) / ((2 * i) * (2 * i + 1));
+      } else if (tipo === "SER002") {
+        termino *= (-x * x) / ((2 * i - 1) * (2 * i));
+      } else {
+        termino *= x / i;
+      }
+    }
+
+    suma += termino;
+    puntos.push({ termino: i + 1, valor: suma });
+  }
+
+  return puntos;
 }
 
+function valorFinal(tipo, x, n) {
+  return generarProgresion(tipo, x, n).at(-1)?.valor ?? 0;
+}
+
+function calcularSeno(x, n) {
+  return valorFinal("SER001", x, n);
+}
 
 function calcularCoseno(x, n) {
-  let suma = 0;
-
-  for (let i = 0; i < n; i++) {
-    const exponente = 2 * i;
-    const signo = i % 2 === 0 ? 1 : -1;
-
-    let factorial = 1;
-
-    for (let j = 1; j <= exponente; j++) {
-      factorial *= j;
-    }
-
-    suma += signo * Math.pow(x, exponente) / factorial;
-  }
-
-  return suma;
+  return valorFinal("SER002", x, n);
 }
 
 function calcularExponencial(x, n) {
-  let suma = 0;
-
-  for (let i = 0; i < n; i++) {
-    let factorial = 1;
-
-    for (let j = 1; j <= i; j++) {
-      factorial *= j;
-    }
-
-    suma += Math.pow(x, i) / factorial;
-  }
-
-  return suma;
+  return valorFinal("SER003", x, n);
 }
 
-
+function calcularProgresion(serieId, x, n) {
+  return generarProgresion(serieId, x, n);
+}
 
 module.exports = {
   calcularSeno,
   calcularCoseno,
-  calcularExponencial
+  calcularExponencial,
+  calcularProgresion
 };

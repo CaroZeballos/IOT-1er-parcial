@@ -1,9 +1,17 @@
 import { useEffect, useState } from "react";
 import "./Dashboard.css";
+import MenuCuenta from "../componentes/MenuCuenta.jsx";
 
-function Dashboard({ usuario, irA }) {
+function Dashboard({ usuario, irA, calculoInicialId, cerrarSesion }) {
   const [calculos, setCalculos] = useState([]);
   const [cargando, setCargando] = useState(true);
+  const [calculoGraficaId, setCalculoGraficaId] = useState("");
+  const [progresionError, setProgresionError] = useState([]);
+  const [zoomGrafica, setZoomGrafica] = useState(1);
+  const [zoomVertical, setZoomVertical] = useState(1);
+  const [inicioGrafica, setInicioGrafica] = useState(0);
+  const [puntoSeleccionado, setPuntoSeleccionado] = useState(null);
+  const [paginaIteraciones, setPaginaIteraciones] = useState(1);
 
   useEffect(() => {
     const obtenerDatos = async () => {
@@ -11,7 +19,7 @@ function Dashboard({ usuario, irA }) {
 
       try {
         const respuesta = await fetch(
-          `http://localhost:3030/api/calculos/usuario/${usuario.usuario_id}`
+          `/api/calculos/usuario/${usuario.usuario_id}`
         );
 
         const datos = await respuesta.json();
@@ -21,6 +29,14 @@ function Dashboard({ usuario, irA }) {
         }
 
         setCalculos(datos);
+        const calculoInicialExiste = datos.some(
+          (calculo) => calculo.calculo_id === calculoInicialId
+        );
+        setCalculoGraficaId(
+          calculoInicialExiste
+            ? calculoInicialId
+            : datos.at(-1)?.calculo_id || ""
+        );
       } catch (error) {
         console.error(error);
         alert("No se pudo cargar el Dashboard");
@@ -30,7 +46,29 @@ function Dashboard({ usuario, irA }) {
     };
 
     obtenerDatos();
-  }, [usuario]);
+  }, [usuario, calculoInicialId]);
+
+  useEffect(() => {
+    if (!calculoGraficaId) {
+      return;
+    }
+
+    const obtenerProgresion = async () => {
+      try {
+        const respuesta = await fetch(
+          `/api/calculos/${calculoGraficaId}/progresion`
+        );
+        const datos = await respuesta.json();
+        if (!respuesta.ok) throw new Error(datos.mensaje);
+        setProgresionError(datos.aproximaciones || []);
+      } catch (error) {
+        console.error(error);
+        setProgresionError([]);
+      }
+    };
+
+    obtenerProgresion();
+  }, [calculoGraficaId]);
 
   const obtenerNombreSerie = (serieId) => {
     const nombres = {
@@ -42,53 +80,194 @@ function Dashboard({ usuario, irA }) {
     return nombres[serieId] || serieId;
   };
 
-  const totalCalculos = calculos.length;
-
-  const errorPromedio =
-    totalCalculos > 0
-      ? calculos.reduce(
-          (total, calculo) =>
-            total + Number(calculo.error_porcentual || 0),
-          0
-        ) / totalCalculos
-      : 0;
-
-  const menorError =
-    totalCalculos > 0
-      ? Math.min(
-          ...calculos.map((calculo) =>
-            Number(calculo.error_porcentual || 0)
-          )
-        )
-      : 0;
-
-  const cantidadesSeries = {
-    Seno: calculos.filter((c) => c.serie_id === "SER001").length,
-    Coseno: calculos.filter((c) => c.serie_id === "SER002").length,
-    Exponencial: calculos.filter((c) => c.serie_id === "SER003").length,
+  const formatearPorcentaje = (valor) => {
+    const numero = Number(valor || 0);
+    if (numero === 0) return "0%";
+    return Math.abs(numero) < 0.000001
+      ? `${numero.toExponential(4)}%`
+      : `${numero.toFixed(6)}%`;
   };
 
-  const serieMasUtilizada =
-    totalCalculos > 0
-      ? Object.entries(cantidadesSeries).sort((a, b) => b[1] - a[1])[0][0]
-      : "—";
+  const serieNormalizada = (calculo) =>
+    String(calculo.serie_id || "").trim().toUpperCase();
 
-  const maxCantidad = Math.max(
-    cantidadesSeries.Seno,
-    cantidadesSeries.Coseno,
-    cantidadesSeries.Exponencial,
-    1
+  const calculoGrafica = calculos.find(
+    (calculo) => calculo.calculo_id === calculoGraficaId
   );
+  const cantidadVisible = Math.max(
+    2,
+    Math.ceil(progresionError.length / zoomGrafica)
+  );
+  const maximoInicio = Math.max(0, progresionError.length - cantidadVisible);
+  const inicioSeguro = Math.min(inicioGrafica, maximoInicio);
+  const progresionVisible = progresionError.slice(
+    inicioSeguro,
+    inicioSeguro + cantidadVisible
+  );
+  const minimoN = progresionVisible[0]?.termino ?? 0;
+  const maximoN = progresionVisible.at(-1)?.termino ?? 0;
+  const rangoN = maximoN - minimoN || 1;
+  const altoGrafica = 300 * zoomVertical;
+  const transformarY = (y) => 40 + ((Number(y) - 40) / 220) * (altoGrafica - 80);
+  const baseGrafica = transformarY(260);
+  const centroGrafica = transformarY(150);
+  const coordenadaX = (valorN) =>
+    minimoN === maximoN
+      ? 410
+      : 60 + ((Number(valorN) - minimoN) / rangoN) * 700;
+  const valoresGrafica = progresionVisible
+    .map((punto) => Number(punto.valor))
+    .filter(Number.isFinite);
+  const minimoValor = valoresGrafica.length ? Math.min(...valoresGrafica) : 0;
+  const maximoValor = valoresGrafica.length ? Math.max(...valoresGrafica) : 1;
+  const margenValor = (maximoValor - minimoValor || Math.abs(maximoValor) || 1) * 0.12;
+  const limiteInferior = minimoValor - margenValor;
+  const limiteSuperior = maximoValor + margenValor;
+  const rangoValor = limiteSuperior - limiteInferior || 1;
+  const coordenadaY = (valor) =>
+    transformarY(260 - ((Number(valor) - limiteInferior) / rangoValor) * 220);
+  const valorRealGrafica = Number(calculoGrafica?.valor_real || 0);
+  const resultadosIteraciones = progresionError.map((punto, indice) => {
+    const valor = Number(punto.valor);
+    const valorAnterior = indice > 0
+      ? Number(progresionError[indice - 1].valor)
+      : 0;
+    return {
+      iteracion: punto.termino,
+      aporte: valor - valorAnterior,
+      valor,
+      error: Math.abs(valorRealGrafica - valor),
+    };
+  });
+  const filasPorPagina = 25;
+  const totalPaginasIteraciones = Math.max(
+    1,
+    Math.ceil(resultadosIteraciones.length / filasPorPagina)
+  );
+  const paginaIteracionesSegura = Math.min(
+    paginaIteraciones,
+    totalPaginasIteraciones
+  );
+  const iteracionesPagina = resultadosIteraciones.slice(
+    (paginaIteracionesSegura - 1) * filasPorPagina,
+    paginaIteracionesSegura * filasPorPagina
+  );
+  const mejorIteracion = resultadosIteraciones.reduce(
+    (mejor, iteracion) =>
+      !mejor || iteracion.error < mejor.error ? iteracion : mejor,
+    null
+  );
+  const erroresAbsolutos = progresionVisible.map((punto) => ({
+    termino: punto.termino,
+    error: Math.abs(valorRealGrafica - Number(punto.valor)),
+  }));
+  const maximoErrorAbsoluto = Math.max(
+    ...erroresAbsolutos.map((punto) => punto.error),
+    Number.EPSILON
+  );
+  const erroresPositivos = erroresAbsolutos
+    .map((punto) => punto.error)
+    .filter((error) => error > 0);
+  const minimoErrorPositivo = erroresPositivos.length
+    ? Math.min(...erroresPositivos)
+    : Number.EPSILON;
+  const usarEscalaLogaritmica =
+    maximoErrorAbsoluto / minimoErrorPositivo > 1000;
+  const rangoLogaritmico =
+    Math.log10(maximoErrorAbsoluto) - Math.log10(minimoErrorPositivo) || 1;
+  const coordenadaYError = (error) => {
+    if (!usarEscalaLogaritmica) {
+      return transformarY(260 - (Number(error) / maximoErrorAbsoluto) * 220);
+    }
+    if (Number(error) <= 0) return baseGrafica;
+    const proporcion =
+      (Math.log10(Number(error)) - Math.log10(minimoErrorPositivo)) /
+      rangoLogaritmico;
+    return transformarY(250 - proporcion * 210);
+  };
+  const valoresCombinados = [
+    ...progresionVisible.map((punto) => Number(punto.valor)),
+    ...erroresAbsolutos.map((punto) => Number(punto.error)),
+    0,
+  ].filter(Number.isFinite);
+  const minimoCombinado = Math.min(...valoresCombinados);
+  const maximoCombinado = Math.max(...valoresCombinados);
+  const margenCombinado =
+    (maximoCombinado - minimoCombinado || Math.abs(maximoCombinado) || 1) * 0.1;
+  const limiteInferiorCombinado = minimoCombinado - margenCombinado;
+  const limiteSuperiorCombinado = maximoCombinado + margenCombinado;
+  const rangoCombinado =
+    limiteSuperiorCombinado - limiteInferiorCombinado || 1;
+  const coordenadaYCombinada = (valor) =>
+    transformarY(
+      260 - ((Number(valor) - limiteInferiorCombinado) / rangoCombinado) * 220
+    );
+  const aportesTerminos = progresionVisible.map((punto) => {
+    const indiceOriginal = progresionError.findIndex(
+      (elemento) => elemento.termino === punto.termino
+    );
+    const anterior = indiceOriginal > 0
+      ? Number(progresionError[indiceOriginal - 1].valor)
+      : 0;
+    return {
+      termino: punto.termino,
+      aporte: Number(punto.valor) - anterior,
+    };
+  });
+  const maximoAporte = Math.max(
+    ...aportesTerminos.map((punto) => Math.abs(punto.aporte)),
+    Number.EPSILON
+  );
+  const coordenadaYAporte = (aporte) =>
+    transformarY(150 - (Number(aporte) / maximoAporte) * 105);
+  const anchoBarraAporte = Math.max(
+    4,
+    Math.min(24, 520 / Math.max(aportesTerminos.length, 1))
+  );
+  const acercarGrafica = () => {
+    const nuevoZoom = Math.min(8, zoomGrafica * 2);
+    setZoomGrafica(nuevoZoom);
+    setInicioGrafica((actual) =>
+      Math.min(actual, Math.max(0, progresionError.length - Math.ceil(progresionError.length / nuevoZoom)))
+    );
+  };
+  const alejarGrafica = () => {
+    const nuevoZoom = Math.max(1, zoomGrafica / 2);
+    setZoomGrafica(nuevoZoom);
+    setInicioGrafica((actual) =>
+      Math.min(actual, Math.max(0, progresionError.length - Math.ceil(progresionError.length / nuevoZoom)))
+    );
+  };
+  const restablecerGrafica = () => {
+    setZoomGrafica(1);
+    setZoomVertical(1);
+    setInicioGrafica(0);
+  };
+  const datosSerieGrafica = {
+    SER001: { nombre: "Seno", clase: "linea-seno" },
+    SER002: { nombre: "Coseno", clase: "linea-coseno" },
+    SER003: { nombre: "Exponencial", clase: "linea-exponencial" },
+  }[serieNormalizada(calculoGrafica || {})] || { nombre: "Serie", clase: "linea-seno" };
 
-  const calculosOrdenados = [...calculos].sort(
-  (a, b) => Number(a.n) - Number(b.n)
-);
-
-  const maxError = Math.max(
-    ...calculos.map((calculo) =>
-      Number(calculo.error_porcentual || 0)
-    ),
-    1
+  const renderizarControlesZoom = () => progresionError.length > 1 && (
+    <div className="controles-zoom">
+      <span>
+        Mostrando términos {minimoN}–{maximoN} de {progresionError.length}
+      </span>
+      <div>
+        <button type="button" onClick={() => setInicioGrafica(Math.max(0, inicioSeguro - cantidadVisible))} disabled={inicioSeguro === 0} title="Ver términos anteriores">←</button>
+        <span className="zoom-eje">Horizontal</span>
+        <button type="button" onClick={alejarGrafica} disabled={zoomGrafica === 1} title="Alejar">−</button>
+        <strong>{zoomGrafica}×</strong>
+        <button type="button" onClick={acercarGrafica} disabled={cantidadVisible <= 2} title="Acercar">+</button>
+        <button type="button" onClick={() => setInicioGrafica(Math.min(maximoInicio, inicioSeguro + cantidadVisible))} disabled={inicioSeguro >= maximoInicio} title="Ver términos siguientes">→</button>
+        <span className="zoom-eje">Eje Y</span>
+        <button type="button" onClick={() => setZoomVertical((actual) => Math.max(1, actual - 0.5))} disabled={zoomVertical === 1} title="Alejar valores">−</button>
+        <strong>{zoomVertical}×</strong>
+        <button type="button" onClick={() => setZoomVertical((actual) => Math.min(4, actual + 0.5))} disabled={zoomVertical >= 4} title="Ampliar variaciones">+</button>
+        <button type="button" className="zoom-restablecer" onClick={restablecerGrafica}>Restablecer</button>
+      </div>
+    </div>
   );
 
   if (cargando) {
@@ -104,43 +283,36 @@ function Dashboard({ usuario, irA }) {
     <div className="dashboard-layout">
 
       {/* SIDEBAR */}
-      <aside className="dashboard-sidebar">
+      <aside className="sidebar">
 
-        <div className="dashboard-logo">
+        <div className="sidebar-brand">
           <span>∑</span>
-          <h2>SeriesLab</h2>
+          <strong>SeriesLab</strong>
         </div>
 
-        <div className="dashboard-menu">
+        <div className="sidebar-section">
+          <span className="sidebar-title">PRINCIPAL</span>
 
-          <p>PRINCIPAL</p>
-
-          <button onClick={() => irA("inicio")}>
-            🏠 Inicio
+          <button className="sidebar-item" onClick={() => irA("inicio")}>
+            <span>⌂</span> Inicio
           </button>
 
-          <button onClick={() => irA("calcular")}>
-            🧮 Calcular
+          <button className="sidebar-item" onClick={() => irA("calcular")}>
+            <span>∑</span> Calcular
           </button>
 
-          <button className="dashboard-activo">
-            📊 Dashboard
+          <button className="sidebar-item active">
+            <span>◫</span> Dashboard
           </button>
 
-          <button onClick={() => irA("historial")}>
-            📋 Historial
+          <button className="sidebar-item" onClick={() => irA("historial")}>
+            <span>◷</span> Historial
           </button>
 
-          <p>GESTIÓN</p>
+        </div>
 
-          <button>
-            👥 Usuarios
-          </button>
-
-          <button>
-            ⚙️ Ajustes
-          </button>
-
+        <div className="sidebar-bottom">
+          <MenuCuenta usuario={usuario} cerrarSesion={cerrarSesion} />
         </div>
       </aside>
 
@@ -160,345 +332,464 @@ function Dashboard({ usuario, irA }) {
             </p>
           </div>
 
-          <div className="dashboard-usuario">
-            <span>Usuario</span>
-            <strong>{usuario?.nombre}</strong>
-          </div>
+          <MenuCuenta usuario={usuario} cerrarSesion={cerrarSesion} variante="dashboard" />
         </div>
 
         {/* TARJETAS */}
         <section className="dashboard-tarjetas">
 
           <div className="dashboard-tarjeta">
-            <span className="tarjeta-icono">∑</span>
+            <span className="tarjeta-icono">ƒ</span>
             <div>
-              <p>Total de cálculos</p>
-              <h2>{totalCalculos}</h2>
+              <p>Serie seleccionada</p>
+              <h2>{calculoGrafica ? obtenerNombreSerie(calculoGrafica.serie_id) : "—"}</h2>
+            </div>
+          </div>
+
+          <div className="dashboard-tarjeta">
+            <span className="tarjeta-icono">x</span>
+            <div>
+              <p>Valor de x</p>
+              <h2>{calculoGrafica?.x ?? "—"}</h2>
+            </div>
+          </div>
+
+          <div className="dashboard-tarjeta">
+            <span className="tarjeta-icono">n</span>
+            <div>
+              <p>Número de términos</p>
+              <h2>{calculoGrafica?.n ?? "—"}</h2>
+            </div>
+          </div>
+
+          <div className="dashboard-tarjeta">
+            <span className="tarjeta-icono">≈</span>
+            <div>
+              <p>Valor calculado</p>
+              <h2>{calculoGrafica ? Number(calculoGrafica.valor_aproximado).toPrecision(8) : "—"}</h2>
+            </div>
+          </div>
+
+          <div className="dashboard-tarjeta">
+            <span className="tarjeta-icono">=</span>
+            <div>
+              <p>Valor real</p>
+              <h2>{calculoGrafica ? Number(calculoGrafica.valor_real).toPrecision(8) : "—"}</h2>
+            </div>
+          </div>
+
+          <div className="dashboard-tarjeta">
+            <span className="tarjeta-icono">Δ</span>
+            <div>
+              <p>Error absoluto</p>
+              <h2>{calculoGrafica ? Number(calculoGrafica.error_absoluto).toExponential(4) : "—"}</h2>
             </div>
           </div>
 
           <div className="dashboard-tarjeta">
             <span className="tarjeta-icono">%</span>
             <div>
-              <p>Error promedio</p>
-              <h2>{errorPromedio.toFixed(6)}%</h2>
+              <p>Error porcentual</p>
+              <h2>{calculoGrafica ? formatearPorcentaje(calculoGrafica.error_porcentual) : "—"}</h2>
             </div>
           </div>
 
-          <div className="dashboard-tarjeta">
+          <div className="dashboard-tarjeta tarjeta-mejor-termino">
             <span className="tarjeta-icono">✓</span>
             <div>
-              <p>Menor error</p>
-              <h2>{menorError.toFixed(6)}%</h2>
-            </div>
-          </div>
-
-          <div className="dashboard-tarjeta">
-            <span className="tarjeta-icono">★</span>
-            <div>
-              <p>Serie más utilizada</p>
-              <h2>{serieMasUtilizada}</h2>
-            </div>
-          </div>
-
-        </section>
-
-        {/* GRAFICOS */}
-        <section className="dashboard-graficos">
-
-          {/* GRAFICO DE BARRAS */}
-          <div className="grafico-card">
-
-            <div className="grafico-header">
-              <div>
-                <h3>Cálculos por serie</h3>
-                <p>Cantidad de cálculos realizados</p>
-              </div>
-            </div>
-
-            <div className="grafico-barras">
-
-              <div className="barra-item">
-                <span>Seno</span>
-
-                <div className="barra-fondo">
-                  <div
-                    className="barra"
-                    style={{
-                      width: `${(cantidadesSeries.Seno / maxCantidad) * 100}%`,
-                    }}
-                  ></div>
-                </div>
-
-                <strong>{cantidadesSeries.Seno}</strong>
-              </div>
-
-              <div className="barra-item">
-                <span>Coseno</span>
-
-                <div className="barra-fondo">
-                  <div
-                    className="barra"
-                    style={{
-                      width: `${(cantidadesSeries.Coseno / maxCantidad) * 100}%`,
-                    }}
-                  ></div>
-                </div>
-
-                <strong>{cantidadesSeries.Coseno}</strong>
-              </div>
-
-              <div className="barra-item">
-                <span>Exponencial</span>
-
-                <div className="barra-fondo">
-                  <div
-                    className="barra"
-                    style={{
-                      width: `${(cantidadesSeries.Exponencial / maxCantidad) * 100}%`,
-                    }}
-                  ></div>
-                </div>
-
-                <strong>{cantidadesSeries.Exponencial}</strong>
-              </div>
-
-            </div>
-          </div>
-
-          {/* ERROR */}
-          <div className="grafico-card">
-
-            <div className="grafico-header">
-              <div>
-                <h3>Error porcentual</h3>
-                <p>Error de cada cálculo realizado</p>
-              </div>
-            </div>
-
-            <div className="grafico-errores">
-
-              {calculos.length === 0 ? (
-                <div className="sin-datos">
-                  No hay datos para mostrar.
-                </div>
-              ) : (
-                calculos.map((calculo, index) => {
-
-                  const error = Number(
-                    calculo.error_porcentual || 0
-                  );
-
-                  return (
-                    <div
-                      className="error-item"
-                      key={calculo.calculo_id}
-                    >
-                      <div className="error-info">
-                        <span>
-                          #{index + 1}{" "}
-                          {obtenerNombreSerie(calculo.serie_id)}
-                        </span>
-
-                        <strong>
-                          {error.toFixed(6)}%
-                        </strong>
-                      </div>
-
-                      <div className="error-fondo">
-                        <div
-                          className="error-barra"
-                          style={{
-                            width: `${(error / maxError) * 100}%`,
-                          }}
-                        ></div>
-                      </div>
-                    </div>
-                  );
-                })
+              <p>Término más preciso</p>
+              <h2>{mejorIteracion ? `n = ${mejorIteracion.iteracion}` : "—"}</h2>
+              {mejorIteracion && (
+                <small>
+                  Valor {mejorIteracion.valor.toPrecision(8)} · error {mejorIteracion.error.toExponential(3)}
+                </small>
               )}
-
             </div>
           </div>
 
         </section>
 
         {/* GRAFICO ERROR VS N */}
-<section className="grafico-card grafico-n">
-
-  <div className="grafico-header">
-    <div>
-      <h3>Error según número de términos</h3>
-      <p>
-        Relación entre el número de términos (n) y el error porcentual
-      </p>
-    </div>
-  </div>
-
-  
-
-  {calculos.length === 0 ? (
-    <div className="sin-datos">
-      No hay datos para mostrar.
-    </div>
-  ) : (
-    <div className="grafico-linea-contenedor">
-
-      <svg
-        viewBox="0 0 800 300"
-        className="grafico-linea"
-        preserveAspectRatio="none"
-      >
-
-        {/* Líneas horizontales */}
-        <line x1="60" y1="40" x2="760" y2="40" className="linea-grid" />
-        <line x1="60" y1="100" x2="760" y2="100" className="linea-grid" />
-        <line x1="60" y1="160" x2="760" y2="160" className="linea-grid" />
-        <line x1="60" y1="220" x2="760" y2="220" className="linea-grid" />
-        <line x1="60" y1="260" x2="760" y2="260" className="linea-eje" />
-
-        {/* Eje vertical */}
-        <line x1="60" y1="40" x2="60" y2="260" className="linea-eje" />
-
-        {/* Línea del gráfico */}
-        <polyline
-          points={calculosOrdenados
-            .map((calculo, index) => {
-              const x =
-                60 +
-                (index / Math.max(calculos.length - 1, 1)) * 700;
-
-              const error = Number(
-                calculo.error_porcentual || 0
-              );
-
-              const y =
-                260 -
-                (error / maxError) * 220;
-
-              return `${x},${y}`;
-            })
-            .join(" ")}
-          className="linea-grafico"
-        />
-
-        {/* Puntos */}
-        {calculosOrdenados
-        .map((calculo, index) => {
-          const x =
-            60 +
-            (index / Math.max(calculos.length - 1, 1)) * 700;
-
-          const error = Number(
-            calculo.error_porcentual || 0
-          );
-
-          const y =
-            260 -
-            (error / maxError) * 220;
-
-          return (
-            <circle
-              key={calculo.calculo_id}
-              cx={x}
-              cy={y}
-              r="5"
-              className="punto-grafico"
-            />
-          );
-        })}
-
-      </svg>
-
-      <div className="eje-x">
-        <span>1</span>
-        <span>2</span>
-        <span>3</span>
-        <span>4</span>
-        <span>5</span>
-      </div>
-
-      <div className="etiqueta-eje-x">
-        Número de términos (n)
-      </div>
-
-    </div>
-  )}
-
-</section>
-
-        {/* TABLA */}
-        <section className="dashboard-tabla-card">
-
-          <div className="grafico-header">
+        <section className="grafico-card grafico-n">
+          <div className="grafico-header frecuencia-encabezado">
             <div>
-              <h3>Detalle de cálculos</h3>
-              <p>Datos generados por {usuario?.nombre}</p>
+              <h3>Valor calculado por iteración</h3>
+              <p>Eje X: iteración · Eje Y: valor calculado</p>
             </div>
+            <label className="selector-serie-grafica">
+              <span>Cálculo</span>
+              <select
+                value={calculoGraficaId}
+                onChange={(evento) => {
+                  setCalculoGraficaId(evento.target.value);
+                  setZoomGrafica(1);
+                  setZoomVertical(1);
+                  setInicioGrafica(0);
+                  setPuntoSeleccionado(null);
+                  setPaginaIteraciones(1);
+                }}
+              >
+                {calculos.map((calculo) => (
+                  <option key={calculo.calculo_id} value={calculo.calculo_id}>
+                    {obtenerNombreSerie(calculo.serie_id)} · x={calculo.x} · n={calculo.n}
+                  </option>
+                ))}
+              </select>
+            </label>
           </div>
 
-          {calculos.length === 0 ? (
+          {renderizarControlesZoom()}
+
+          {progresionError.length === 0 ? (
             <div className="sin-datos">
-              Todavía no has realizado cálculos.
+              No hay datos para mostrar.
             </div>
           ) : (
-            <div className="dashboard-tabla-contenedor">
+            <div className="grafico-linea-contenedor">
+              <svg viewBox={`0 0 800 ${altoGrafica}`} className="grafico-linea" style={{ height: `${altoGrafica}px` }}>
+                <defs>
+                  <clipPath id="recorte-valor">
+                    <rect x="63" y="43" width="694" height={altoGrafica - 86} />
+                  </clipPath>
+                </defs>
+                {[40, 100, 160, 220].map((y) => (
+                  <line key={y} x1="60" y1={transformarY(y)} x2="760" y2={transformarY(y)} className="linea-grid" />
+                ))}
+                <line x1="60" y1={baseGrafica} x2="760" y2={baseGrafica} className="linea-eje" />
+                <line x1="60" y1="40" x2="60" y2={baseGrafica} className="linea-eje" />
 
-              <table className="dashboard-tabla">
-
-                <thead>
-                  <tr>
-                    <th>Serie</th>
-                    <th>x</th>
-                    <th>n</th>
-                    <th>Aproximado</th>
-                    <th>Real</th>
-                    <th>Error absoluto</th>
-                    <th>Error %</th>
-                  </tr>
-                </thead>
-
-                <tbody>
-
-                  {calculos.map((calculo) => (
-                    <tr key={calculo.calculo_id}>
-
-                      <td>
-                        <span className="dashboard-serie">
-                          {obtenerNombreSerie(calculo.serie_id)}
-                        </span>
-                      </td>
-
-                      <td>{calculo.x}</td>
-
-                      <td>{calculo.n}</td>
-
-                      <td>
-                        {Number(calculo.valor_aproximado).toFixed(6)}
-                      </td>
-
-                      <td>
-                        {Number(calculo.valor_real).toFixed(6)}
-                      </td>
-
-                      <td>
-                        {Number(calculo.error_absoluto).toExponential(4)}
-                      </td>
-
-                      <td>
-                        {Number(calculo.error_porcentual).toFixed(6)}%
-                      </td>
-
-                    </tr>
+                <g clipPath="url(#recorte-valor)">
+                  {progresionVisible.length > 1 && (
+                    <polyline
+                      points={progresionVisible
+                        .map((punto) => `${coordenadaX(punto.termino)},${coordenadaY(punto.valor)}`)
+                        .join(" ")}
+                      className={`linea-grafico ${datosSerieGrafica.clase}`}
+                    />
+                  )}
+                  {progresionVisible.map((punto) => (
+                  <circle
+                    key={punto.termino}
+                    cx={coordenadaX(punto.termino)}
+                    cy={coordenadaY(punto.valor)}
+                    r={puntoSeleccionado?.tipo === "valor" && puntoSeleccionado.x === punto.termino ? "8" : "5"}
+                    className={`punto-grafico punto-interactivo ${datosSerieGrafica.clase}`}
+                    role="button"
+                    tabIndex="0"
+                    onClick={() => setPuntoSeleccionado({ tipo: "valor", x: punto.termino, y: Number(punto.valor) })}
+                    onKeyDown={(evento) => {
+                      if (evento.key === "Enter" || evento.key === " ") {
+                        setPuntoSeleccionado({ tipo: "valor", x: punto.termino, y: Number(punto.valor) });
+                      }
+                    }}
+                  >
+                    <title>{`${datosSerieGrafica.nombre}: iteración ${punto.termino}, valor=${Number(punto.valor).toPrecision(8)}`}</title>
+                  </circle>
                   ))}
+                </g>
+                <line x1="60" y1={baseGrafica} x2="760" y2={baseGrafica} className="linea-eje linea-eje-frontal" />
+                <line x1="60" y1="40" x2="60" y2={baseGrafica} className="linea-eje linea-eje-frontal" />
+                <text x="16" y={altoGrafica / 2} textAnchor="middle" transform={`rotate(-90 16 ${altoGrafica / 2})`} className="titulo-eje">Valor calculado</text>
 
-                </tbody>
+                <text x="52" y="45" textAnchor="end">{limiteSuperior.toPrecision(4)}</text>
+                <text x="52" y={baseGrafica} textAnchor="end">{limiteInferior.toPrecision(4)}</text>
 
-              </table>
-
+                {minimoN === maximoN ? (
+                  <text x="410" y={altoGrafica - 18} textAnchor="middle">{minimoN}</text>
+                ) : (
+                  <>
+                    <text x="60" y={altoGrafica - 18} textAnchor="middle">{minimoN}</text>
+                    <text x="760" y={altoGrafica - 18} textAnchor="middle">{maximoN}</text>
+                  </>
+                )}
+              </svg>
+              <div className="etiqueta-eje-x">Iteración</div>
+              {puntoSeleccionado?.tipo === "valor" && (
+                <div className="coordenadas-punto">
+                  <span>Punto seleccionado</span>
+                  <strong>x = {puntoSeleccionado.x}</strong>
+                  <strong>y = {puntoSeleccionado.y.toPrecision(10)}</strong>
+                </div>
+              )}
             </div>
           )}
+        </section>
 
+        <section className="grafico-card grafico-n">
+          <div className="grafico-header frecuencia-encabezado">
+            <div>
+              <h3>Valor calculado y error</h3>
+              <p>Comparación de la aproximación y su error en cada iteración</p>
+            </div>
+            <div className="leyenda-grafica-combinada">
+              <span><i className="calculado" />Valor calculado</span>
+              <span><i className="error" />Error absoluto</span>
+            </div>
+          </div>
+          {renderizarControlesZoom()}
+          {progresionVisible.length === 0 ? (
+            <div className="sin-datos">Selecciona un cálculo para mostrar la comparación.</div>
+          ) : (
+            <div className="grafico-linea-contenedor">
+              <svg viewBox={`0 0 800 ${altoGrafica}`} className="grafico-linea" style={{ height: `${altoGrafica}px` }}>
+                <defs>
+                  <clipPath id="recorte-combinado">
+                    <rect x="63" y="43" width="694" height={altoGrafica - 86} />
+                  </clipPath>
+                </defs>
+                {[40, 100, 160, 220].map((y) => (
+                  <line key={y} x1="60" y1={transformarY(y)} x2="760" y2={transformarY(y)} className="linea-grid" />
+                ))}
+                <g clipPath="url(#recorte-combinado)">
+                  {progresionVisible.length > 1 && (
+                    <>
+                      <polyline
+                        points={progresionVisible.map((punto) => `${coordenadaX(punto.termino)},${coordenadaYCombinada(punto.valor)}`).join(" ")}
+                        className="linea-grafico linea-calculado-combinada"
+                      />
+                      <polyline
+                        points={erroresAbsolutos.map((punto) => `${coordenadaX(punto.termino)},${coordenadaYCombinada(punto.error)}`).join(" ")}
+                        className="linea-grafico linea-error-combinada"
+                      />
+                    </>
+                  )}
+                  {progresionVisible.map((punto) => (
+                    <circle
+                      key={`valor-${punto.termino}`}
+                      cx={coordenadaX(punto.termino)}
+                      cy={coordenadaYCombinada(punto.valor)}
+                      r="4"
+                      className="punto-combinado punto-calculado-combinado"
+                    >
+                      <title>{`Iteración ${punto.termino}: valor calculado ${Number(punto.valor).toPrecision(8)}`}</title>
+                    </circle>
+                  ))}
+                  {erroresAbsolutos.map((punto) => (
+                    <circle
+                      key={`error-${punto.termino}`}
+                      cx={coordenadaX(punto.termino)}
+                      cy={coordenadaYCombinada(punto.error)}
+                      r="4"
+                      className="punto-combinado punto-error-combinado"
+                    >
+                      <title>{`Iteración ${punto.termino}: error ${punto.error.toExponential(6)}`}</title>
+                    </circle>
+                  ))}
+                </g>
+                <line x1="60" y1={baseGrafica} x2="760" y2={baseGrafica} className="linea-eje linea-eje-frontal" />
+                <line x1="60" y1="40" x2="60" y2={baseGrafica} className="linea-eje linea-eje-frontal" />
+                <text x="16" y={altoGrafica / 2} textAnchor="middle" transform={`rotate(-90 16 ${altoGrafica / 2})`} className="titulo-eje">Valor</text>
+                <text x="52" y="45" textAnchor="end">{limiteSuperiorCombinado.toPrecision(4)}</text>
+                <text x="52" y={baseGrafica} textAnchor="end">{limiteInferiorCombinado.toPrecision(4)}</text>
+                <text x="60" y={altoGrafica - 18} textAnchor="middle">{minimoN}</text>
+                <text x="760" y={altoGrafica - 18} textAnchor="middle">{maximoN}</text>
+              </svg>
+              <div className="etiqueta-eje-x">Iteración</div>
+            </div>
+          )}
+        </section>
+
+        <section className="grafico-card grafico-n">
+          <div className="grafico-header">
+            <div>
+              <h3>Aporte de cada término</h3>
+              <p>Cuánto suma o resta cada término al valor calculado seleccionado</p>
+            </div>
+          </div>
+          {renderizarControlesZoom()}
+          {aportesTerminos.length === 0 ? (
+            <div className="sin-datos">Selecciona un cálculo para ver sus términos.</div>
+          ) : (
+            <div className="grafico-linea-contenedor">
+              <svg viewBox={`0 0 800 ${altoGrafica}`} className="grafico-linea" style={{ height: `${altoGrafica}px` }}>
+                <defs>
+                  <clipPath id="recorte-aportes">
+                    <rect x="63" y="43" width="694" height={altoGrafica - 86} />
+                  </clipPath>
+                </defs>
+                {[45, 97.5, 150, 202.5, 255].map((y) => (
+                  <line key={y} x1="60" y1={transformarY(y)} x2="760" y2={transformarY(y)} className={y === 150 ? "linea-cero" : "linea-grid"} />
+                ))}
+                <line x1="60" y1="40" x2="60" y2={baseGrafica} className="linea-eje" />
+                <g clipPath="url(#recorte-aportes)">
+                  {aportesTerminos.map((punto) => {
+                  const y = coordenadaYAporte(punto.aporte);
+                  return (
+                    <rect
+                      key={punto.termino}
+                      x={coordenadaX(punto.termino) - anchoBarraAporte / 2}
+                      y={Math.min(centroGrafica, y)}
+                      width={anchoBarraAporte}
+                      height={Math.max(1, Math.abs(centroGrafica - y))}
+                      rx="3"
+                      className={punto.aporte >= 0 ? "barra-aporte-positivo" : "barra-aporte-negativo"}
+                    >
+                      <title>{`Término ${punto.termino}: aporte ${punto.aporte.toPrecision(7)}`}</title>
+                    </rect>
+                  );
+                  })}
+                </g>
+                <line x1="60" y1="40" x2="60" y2={baseGrafica} className="linea-eje linea-eje-frontal" />
+                <line x1="60" y1={centroGrafica} x2="760" y2={centroGrafica} className="linea-eje linea-eje-frontal" />
+                <text x="16" y={altoGrafica / 2} textAnchor="middle" transform={`rotate(-90 16 ${altoGrafica / 2})`} className="titulo-eje">Aporte</text>
+                <text x="52" y="48" textAnchor="end">+{maximoAporte.toPrecision(3)}</text>
+                <text x="52" y={centroGrafica + 4} textAnchor="end">0</text>
+                <text x="52" y={baseGrafica} textAnchor="end">−{maximoAporte.toPrecision(3)}</text>
+                <text x="60" y={altoGrafica - 18} textAnchor="middle">{minimoN}</text>
+                <text x="760" y={altoGrafica - 18} textAnchor="middle">{maximoN}</text>
+              </svg>
+              <div className="etiqueta-eje-x">Iteración</div>
+              <div className="leyenda-aportes"><span><i className="positivo" />Suma</span><span><i className="negativo" />Resta</span></div>
+            </div>
+          )}
+        </section>
+
+        <section className="grafico-card grafico-n">
+          <div className="grafico-header">
+            <div>
+              <h3>Error absoluto por iteración</h3>
+              <p>
+                Diferencia entre el valor calculado y el valor real en cada término
+                {usarEscalaLogaritmica && " · escala logarítmica"}
+              </p>
+            </div>
+          </div>
+          {renderizarControlesZoom()}
+          {erroresAbsolutos.length === 0 ? (
+            <div className="sin-datos">Selecciona un cálculo para mostrar su error.</div>
+          ) : (
+            <div className="grafico-linea-contenedor">
+              <svg viewBox={`0 0 800 ${altoGrafica}`} className="grafico-linea" style={{ height: `${altoGrafica}px` }}>
+                <defs>
+                  <clipPath id="recorte-error">
+                    <rect x="63" y="43" width="694" height={altoGrafica - 86} />
+                  </clipPath>
+                </defs>
+                {[40, 100, 160, 220].map((y) => (
+                  <line key={y} x1="60" y1={transformarY(y)} x2="760" y2={transformarY(y)} className="linea-grid" />
+                ))}
+                <line x1="60" y1={baseGrafica} x2="760" y2={baseGrafica} className="linea-eje" />
+                <line x1="60" y1="40" x2="60" y2={baseGrafica} className="linea-eje" />
+                <g clipPath="url(#recorte-error)">
+                  {erroresAbsolutos.length > 1 && (
+                    <polyline
+                      points={erroresAbsolutos.map((p) => `${coordenadaX(p.termino)},${coordenadaYError(p.error)}`).join(" ")}
+                      className="linea-grafico linea-error-absoluto"
+                    />
+                  )}
+                  {erroresAbsolutos.map((p) => (
+                  <circle
+                    key={p.termino}
+                    cx={coordenadaX(p.termino)}
+                    cy={coordenadaYError(p.error)}
+                    r={puntoSeleccionado?.tipo === "error" && puntoSeleccionado.x === p.termino ? "8" : "5"}
+                    className="punto-grafico punto-error-absoluto punto-interactivo"
+                    role="button"
+                    tabIndex="0"
+                    onClick={() => setPuntoSeleccionado({ tipo: "error", x: p.termino, y: p.error })}
+                    onKeyDown={(evento) => {
+                      if (evento.key === "Enter" || evento.key === " ") {
+                        setPuntoSeleccionado({ tipo: "error", x: p.termino, y: p.error });
+                      }
+                    }}
+                  >
+                    <title>{`Iteración ${p.termino}: error ${p.error.toPrecision(6)}`}</title>
+                  </circle>
+                  ))}
+                </g>
+                <line x1="60" y1={baseGrafica} x2="760" y2={baseGrafica} className="linea-eje linea-eje-frontal" />
+                <line x1="60" y1="40" x2="60" y2={baseGrafica} className="linea-eje linea-eje-frontal" />
+                <text x="16" y={altoGrafica / 2} textAnchor="middle" transform={`rotate(-90 16 ${altoGrafica / 2})`} className="titulo-eje">Error absoluto</text>
+                <text x="52" y="45" textAnchor="end">{maximoErrorAbsoluto.toPrecision(4)}</text>
+                <text x="52" y={baseGrafica} textAnchor="end">
+                  {usarEscalaLogaritmica ? minimoErrorPositivo.toExponential(1) : "0"}
+                </text>
+                <text x="60" y={altoGrafica - 18} textAnchor="middle">{minimoN}</text>
+                <text x="760" y={altoGrafica - 18} textAnchor="middle">{maximoN}</text>
+              </svg>
+              <div className="etiqueta-eje-x">Iteración</div>
+              {puntoSeleccionado?.tipo === "error" && (
+                <div className="coordenadas-punto">
+                  <span>Punto seleccionado</span>
+                  <strong>x = {puntoSeleccionado.x}</strong>
+                  <strong>y = {puntoSeleccionado.y.toExponential(8)}</strong>
+                </div>
+              )}
+            </div>
+          )}
+        </section>
+
+        <section className="dashboard-tabla-card tabla-iteraciones-card">
+          <div className="grafico-header tabla-iteraciones-header">
+            <div>
+              <h3>Resultados por iteración</h3>
+              <p>
+                {datosSerieGrafica.nombre} · x={calculoGrafica?.x ?? "—"} · {resultadosIteraciones.length} términos
+              </p>
+            </div>
+            {resultadosIteraciones.length > 0 && (
+              <span>
+                Filas {(paginaIteracionesSegura - 1) * filasPorPagina + 1}–
+                {Math.min(paginaIteracionesSegura * filasPorPagina, resultadosIteraciones.length)}
+              </span>
+            )}
+          </div>
+
+          {resultadosIteraciones.length === 0 ? (
+            <div className="sin-datos">Selecciona un cálculo para ver sus iteraciones.</div>
+          ) : (
+            <>
+              <div className="dashboard-tabla-contenedor tabla-iteraciones-scroll">
+                <table className="dashboard-tabla tabla-iteraciones">
+                  <thead>
+                    <tr>
+                      <th>Iteración</th>
+                      <th>Aporte del término</th>
+                      <th>Valor calculado</th>
+                      <th>Error absoluto</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {iteracionesPagina.map((fila) => (
+                      <tr
+                        key={fila.iteracion}
+                        className={fila.iteracion === mejorIteracion?.iteracion ? "iteracion-mas-precisa" : ""}
+                      >
+                        <td>
+                          <strong>{fila.iteracion}</strong>
+                          {fila.iteracion === mejorIteracion?.iteracion && (
+                            <span className="badge-mas-preciso">✓ Más preciso</span>
+                          )}
+                        </td>
+                        <td className={fila.aporte >= 0 ? "valor-positivo" : "valor-negativo"}>
+                          {fila.aporte.toExponential(8)}
+                        </td>
+                        <td>{fila.valor.toPrecision(12)}</td>
+                        <td>{fila.error.toExponential(8)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <div className="paginacion-iteraciones">
+                <button
+                  type="button"
+                  disabled={paginaIteracionesSegura === 1}
+                  onClick={() => setPaginaIteraciones((pagina) => Math.max(1, pagina - 1))}
+                >
+                  ← Anterior
+                </button>
+                <span>Página {paginaIteracionesSegura} de {totalPaginasIteraciones}</span>
+                <button
+                  type="button"
+                  disabled={paginaIteracionesSegura === totalPaginasIteraciones}
+                  onClick={() => setPaginaIteraciones((pagina) => Math.min(totalPaginasIteraciones, pagina + 1))}
+                >
+                  Siguiente →
+                </button>
+              </div>
+            </>
+          )}
         </section>
 
       </main>

@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import "./Historial.css";
+import MenuCuenta from "../componentes/MenuCuenta.jsx";
 
-function Historial({ usuario, irA }) {
+function Historial({ usuario, irA, analizarCalculo, cerrarSesion }) {
   const [calculos, setCalculos] = useState([]);
   const [cargando, setCargando] = useState(true);
 
@@ -11,7 +12,7 @@ function Historial({ usuario, irA }) {
 
       try {
         const respuesta = await fetch(
-          `http://localhost:3030/api/calculos/usuario/${usuario.usuario_id}`
+          `/api/calculos/usuario/${usuario.usuario_id}`
         );
 
         const datos = await respuesta.json();
@@ -50,43 +51,45 @@ function Historial({ usuario, irA }) {
     });
   };
 
+  const formatearPorcentaje = (valor) => {
+    const numero = Number(valor || 0);
+    if (numero === 0) return "0%";
+    return Math.abs(numero) < 0.000001
+      ? `${numero.toExponential(4)}%`
+      : `${numero.toFixed(6)}%`;
+  };
+
   return (
     <div className="historial-layout">
 
-      <aside className="historial-sidebar">
-        <div className="historial-logo">
+      <aside className="sidebar">
+        <div className="sidebar-brand">
           <span>∑</span>
-          <h2>SeriesLab</h2>
+          <strong>SeriesLab</strong>
         </div>
 
-        <div className="historial-menu">
-          <p>PRINCIPAL</p>
+        <div className="sidebar-section">
+          <span className="sidebar-title">PRINCIPAL</span>
 
-          <button onClick={() => irA("inicio")}>
-            🏠 Inicio
+          <button className="sidebar-item" onClick={() => irA("inicio")}>
+            <span>⌂</span> Inicio
           </button>
 
-          <button onClick={() => irA("calcular")}>
-            🧮 Calcular
+          <button className="sidebar-item" onClick={() => irA("calcular")}>
+            <span>∑</span> Calcular
           </button>
 
-          <button onClick={() => irA("dashboard")}>
-            📊 Dashboard
+          <button className="sidebar-item" onClick={() => irA("dashboard")}>
+            <span>◫</span> Dashboard
           </button>
 
-          <button className="historial-activo">
-            📋 Historial
+          <button className="sidebar-item active">
+            <span>◷</span> Historial
           </button>
+        </div>
 
-          <p>GESTIÓN</p>
-
-          <button>
-            👥 Usuarios
-          </button>
-
-          <button>
-            ⚙️ Ajustes
-          </button>
+        <div className="sidebar-bottom">
+          <MenuCuenta usuario={usuario} cerrarSesion={cerrarSesion} />
         </div>
       </aside>
 
@@ -94,8 +97,8 @@ function Historial({ usuario, irA }) {
 
         <div className="historial-header">
           <div>
-            <span className="historial-etiqueta">SERIESLAB</span>
-            <h1>Mi historial</h1>
+            <span className="historial-etiqueta">REGISTRO DE ACTIVIDAD</span>
+            <h1>Historial de <em>cálculos.</em></h1>
             <p>
               Consulta los cálculos que has realizado anteriormente.
             </p>
@@ -134,11 +137,12 @@ function Historial({ usuario, irA }) {
                     <th>Serie</th>
                     <th>x</th>
                     <th>n</th>
-                    <th>Aproximado</th>
+                    <th>Valor calculado</th>
                     <th>Valor real</th>
                     <th>Error absoluto</th>
-                    <th>Error %</th>
+                    <th>Error porcentual</th>
                     <th>Fecha</th>
+                    <th>Análisis</th>
                   </tr>
                 </thead>
 
@@ -168,11 +172,20 @@ function Historial({ usuario, irA }) {
                       </td>
 
                       <td>
-                        {Number(calculo.error_porcentual).toFixed(6)}%
+                        {formatearPorcentaje(calculo.error_porcentual)}
                       </td>
 
                       <td>
                         {formatearFecha(calculo.fecha)}
+                      </td>
+                      <td>
+                        <button
+                          type="button"
+                          className="btn-ver-analisis"
+                          onClick={() => analizarCalculo(calculo.calculo_id)}
+                        >
+                          Ver análisis →
+                        </button>
                       </td>
                     </tr>
                   ))}

@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import "./Calcular.css";
+import MenuCuenta from "../componentes/MenuCuenta.jsx";
 
-function Calcular({ usuario, irA }) {
+function Calcular({ usuario, irA, cerrarSesion }) {
   const [series, setSeries] = useState([]);
   const [serieSeleccionada, setSerieSeleccionada] = useState("");
 
@@ -9,6 +10,7 @@ function Calcular({ usuario, irA }) {
   const [n, setN] = useState("");
 
   const [resultado, setResultado] = useState(null);
+  const [aproximaciones, setAproximaciones] = useState([]);
   const [cargando, setCargando] = useState(false);
 
   // Obtener las series desde MongoDB mediante el backend
@@ -16,7 +18,7 @@ function Calcular({ usuario, irA }) {
     const obtenerSeries = async () => {
       try {
         const respuesta = await fetch(
-          "http://localhost:3030/api/series"
+          "/api/series"
         );
 
         const datos = await respuesta.json();
@@ -44,6 +46,21 @@ function Calcular({ usuario, irA }) {
     (serie) => serie.serie_id === serieSeleccionada
   );
 
+  const valoresGrafica = aproximaciones
+    .map((punto) => Number(punto.valor))
+    .filter(Number.isFinite);
+  const valorRealGrafica = Number(resultado?.valor_real);
+  const todosLosValores = Number.isFinite(valorRealGrafica)
+    ? [...valoresGrafica, valorRealGrafica]
+    : valoresGrafica;
+  const minimoGrafica = Math.min(...todosLosValores, 0);
+  const maximoGrafica = Math.max(...todosLosValores, 0);
+  const rangoGrafica = maximoGrafica - minimoGrafica || 1;
+  const puntoX = (indice) =>
+    55 + (indice / Math.max(aproximaciones.length - 1, 1)) * 690;
+  const puntoY = (valor) =>
+    245 - ((valor - minimoGrafica) / rangoGrafica) * 195;
+
   const realizarCalculo = async (e) => {
     e.preventDefault();
 
@@ -59,10 +76,11 @@ function Calcular({ usuario, irA }) {
 
     setCargando(true);
     setResultado(null);
+    setAproximaciones([]);
 
     try {
       const respuesta = await fetch(
-        "http://localhost:3030/api/calculos",
+        "/api/calculos",
         {
           method: "POST",
           headers: {
@@ -86,6 +104,7 @@ function Calcular({ usuario, irA }) {
       }
 
       setResultado(datos.calculo);
+      setAproximaciones(datos.aproximaciones || []);
 
     } catch (error) {
       console.error(error);
@@ -143,31 +162,8 @@ function Calcular({ usuario, irA }) {
           </button>
         </div>
 
-        <div className="sidebar-section">
-          <span className="sidebar-title">GESTIÓN</span>
-
-          <button className="sidebar-item">
-            <span>♙</span>
-            Usuarios
-          </button>
-
-          <button className="sidebar-item">
-            <span>⚙</span>
-            Ajustes
-          </button>
-        </div>
-
         <div className="sidebar-bottom">
-          <div className="user-mini">
-            <div className="user-avatar">
-              {usuario?.nombre?.charAt(0)?.toUpperCase() || "A"}
-            </div>
-
-            <div>
-              <strong>{usuario?.nombre || "Usuario"}</strong>
-              <small>Mi cuenta</small>
-            </div>
-          </div>
+          <MenuCuenta usuario={usuario} cerrarSesion={cerrarSesion} />
         </div>
 
       </aside>
@@ -211,6 +207,7 @@ function Calcular({ usuario, irA }) {
                   Configura los valores para comenzar.
                 </p>
               </div>
+
             </div>
 
             <div className="form-grid">
@@ -276,6 +273,7 @@ function Calcular({ usuario, irA }) {
                 <input
                   type="number"
                   min="1"
+                  max="999"
                   step="1"
                   placeholder="Ej. 5"
                   value={n}
@@ -345,6 +343,67 @@ function Calcular({ usuario, irA }) {
                 </div>
 
               </div>
+
+              {aproximaciones.length > 0 && (
+                <div className="convergencia-card">
+                  <div className="convergencia-header">
+                    <div>
+                      <span>CONVERGENCIA POR TÉRMINO</span>
+                      <h3>Aproximación en cada repetición</h3>
+                    </div>
+                    <div className="convergencia-leyenda">
+                      <i></i> Aproximación
+                      <i className="real"></i> Valor real
+                    </div>
+                  </div>
+
+                  <div className="convergencia-grafica">
+                    <svg viewBox="0 0 800 285" role="img" aria-label="Gráfica de aproximación por término">
+                      {[50, 115, 180, 245].map((y) => (
+                        <line key={y} x1="55" y1={y} x2="745" y2={y} className="convergencia-grid" />
+                      ))}
+                      <line x1="55" y1="50" x2="55" y2="245" className="convergencia-eje" />
+                      <line x1="55" y1="245" x2="745" y2="245" className="convergencia-eje" />
+
+                      {Number.isFinite(valorRealGrafica) && (
+                        <line
+                          x1="55"
+                          y1={puntoY(valorRealGrafica)}
+                          x2="745"
+                          y2={puntoY(valorRealGrafica)}
+                          className="convergencia-real"
+                        />
+                      )}
+
+                      <polyline
+                        points={aproximaciones
+                          .map((punto, indice) => `${puntoX(indice)},${puntoY(Number(punto.valor))}`)
+                          .join(" ")}
+                        className="convergencia-linea"
+                      />
+
+                      {aproximaciones.map((punto, indice) => (
+                        <g key={punto.termino}>
+                          <circle
+                            cx={puntoX(indice)}
+                            cy={puntoY(Number(punto.valor))}
+                            r="5"
+                            className="convergencia-punto"
+                          >
+                            <title>{`Término ${punto.termino}: ${Number(punto.valor).toPrecision(8)}`}</title>
+                          </circle>
+                          {(aproximaciones.length <= 12 || indice === 0 || indice === aproximaciones.length - 1) && (
+                            <text x={puntoX(indice)} y="268" textAnchor="middle">
+                              {punto.termino}
+                            </text>
+                          )}
+                        </g>
+                      ))}
+                    </svg>
+                    <p>Número de términos (n)</p>
+                  </div>
+                </div>
+              )}
 
             </section>
           )}
